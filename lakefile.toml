@@ -1,0 +1,10 @@
+name = "microlegg"
+version = "0.1.0"
+defaultTargets = ["microlegg"]
+
+[[lean_lib]]
+name = "Microlegg"
+
+[[lean_exe]]
+name = "microlegg"
+root = "Main"
