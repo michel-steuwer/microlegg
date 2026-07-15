@@ -15,7 +15,7 @@ namespace UnionFind
 
 def makeset (uf: UnionFind) : ID × UnionFind :=
   let id' := uf.parent.size
-  (id', {parent := uf.parent.push id'})
+  (id', ⟨uf.parent.push id'⟩)
 
 partial def find (uf: UnionFind) (id : ID) : ID :=
   let pid := uf.parent[id]!
@@ -27,7 +27,7 @@ def union (uf: UnionFind) (a b : ID) : Bool × UnionFind :=
   if a' == b' then
     (false, uf)
   else
-    (true, {parent := uf.parent.set! b' a'})
+    (true, ⟨uf.parent.set! b' a'⟩)
 
 end UnionFind
 
@@ -37,12 +37,13 @@ structure EGraph where
 
 namespace EGraph
 
-def canonicalizeNode (eg : EGraph) (n : ENode) : ENode :=
-  { f := n.f, l := n.l.map (eg.uf.find) }
+def canonicalizeNode (n : ENode) : StateM EGraph ENode := do
+  let eg ← get
+  return ⟨n.f, n.l.map (eg.uf.find)⟩
 
 def add (n : ENode) : StateM EGraph ID := do
   let eg ← get
-  let n := eg.canonicalizeNode n
+  let n ← canonicalizeNode n
   match eg.memo[n]? with
     | some id => return id
     | none =>
@@ -51,28 +52,25 @@ def add (n : ENode) : StateM EGraph ID := do
       return newId
 
 def union (a b : ID) : StateM EGraph Bool := do
-  let eg ← get
-  let (changed, uf) := eg.uf.union a b
-  set { eg with uf := uf }
+  let (changed, uf) := (← get).uf.union a b
+  modify (fun eg => { eg with uf := uf })
   return changed
 
-def rebuildOnce : StateM EGraph Bool := do
-  let mut keepGoing := false
-  let oldMemo := (← get).memo
-  modify (fun eg => {eg with memo := ∅})
-  for (oldNode, oldId) in oldMemo.toList do
-    let newNode := (← get).canonicalizeNode oldNode
-    let newId ← match (← get).memo[newNode]? with
-      | some newId => pure newId
-      | none =>
-        let newId := (← get).uf.find oldId
-        modify (fun eg => {eg with memo := eg.memo.insert newNode newId })
-        pure newId
-    if (← union newId oldId) then keepGoing := true
-  return keepGoing
-
-partial def rebuild : StateM EGraph Unit := do
-  if (← rebuildOnce) then rebuild else return ()
+def rebuild : StateM EGraph Unit := do
+  let mut keepGoing := true
+  while keepGoing do
+    keepGoing := false
+    let oldMemo := (← get).memo
+    modify (fun eg => {eg with memo := ∅})
+    for (oldNode, oldId) in oldMemo.toList do
+      let newNode ← canonicalizeNode oldNode
+      let newId ← match (← get).memo[newNode]? with
+        | some newId => pure newId
+        | none =>
+          let newId := (← get).uf.find oldId
+          modify (fun eg => {eg with memo := eg.memo.insert newNode newId })
+          pure newId
+      if (← union newId oldId) then keepGoing := true
 
 end EGraph
 
@@ -84,10 +82,19 @@ abbrev Subst := HashMap String ID
 
 namespace EGraph
 
+def instantiate (pat : Pattern) (subst : Subst) : StateM EGraph ID :=
+  match pat with
+    | .var name => return subst[name]!
+    | .app f l => do
+      let node := ⟨f, (← l.mapM (fun p => instantiate  p subst))⟩
+      return (← add node)
+
 def nodesInClass (eg : EGraph) (root : ID) : List ENode :=
   eg.memo.toList.filterMap (fun (n, id) => if id == root then some n else none)
 
-partial def ematchRec (pat : Pattern) (root : ID) (subst : Subst) : StateM EGraph (List Subst) := do
+partial def ematchRec (pat : Pattern)
+                      (root : ID)
+                      (subst : Subst) : StateM EGraph (List Subst) := do
   match pat with
     | .var name => match subst[name]? with
       | none => return [subst.insert name root]
@@ -96,25 +103,20 @@ partial def ematchRec (pat : Pattern) (root : ID) (subst : Subst) : StateM EGrap
       let nodes := (← get).nodesInClass root
       let mut outputs : List Subst := []
       for node in nodes do
-        if node.f == f && node.l.length == subpats.length then
-          let mut todo : List Subst := [subst]
-          for (subId, subPat) in node.l.zip subpats do
-            let mut next : List Subst := []
-            for s in todo do
-              next := next ++ (← ematchRec subPat subId s)
-            todo := next
-          outputs := outputs ++ todo
+        if node.f != f then continue
+        if node.l.length != subpats.length then continue
+        let mut todo : List Subst := [subst]
+        for (subId, subPat) in node.l.zip subpats do
+          let mut results : List Subst := []
+          for newSubst in todo do
+            results := results ++ (← ematchRec subPat subId newSubst)
+          todo := results
+        outputs := outputs ++ todo
       return outputs
 
 def ematch (pat : Pattern) (root : ID) : StateM EGraph (List Subst) :=
   ematchRec pat root ∅
 
-def instantiate (pat : Pattern) (subst : Subst) : StateM EGraph ID :=
-  match pat with
-    | .var name => return subst[name]!
-    | .app f l => do
-      let l ← l.mapM (fun p => instantiate  p subst)
-      return (← add (ENode.mk f l))
 
 end EGraph
 

@@ -35,7 +35,7 @@ def congruenceTest : StateM EGraph Bool := do
   rebuild
   return (← get).uf.find fa == (← get).uf.find fb
 
-#eval check "rebuildTest" (congruenceTest.run' {})
+#eval check "congruenceTest" (congruenceTest.run' {})
 
 -- constants are just 0-ary applications; `+` is binary
 def commRule : Rewrite :=
@@ -65,5 +65,5 @@ def bigTest : StateM EGraph Bool := do
 def main : IO Unit := do
   check "UF find" ufTest
   check "egTest" (egTest.run' {})
-  check "rebuildTest" (congruenceTest.run' {})
+  check "congruenceTest" (congruenceTest.run' {})
   check "big test" (bigTest.run' {})
