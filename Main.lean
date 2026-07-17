@@ -18,7 +18,7 @@ open EGraph
 
 def leaf (name : String) : ENode := ENode.mk name ∅
 
-def egTest : StateM EGraph Bool := do
+def egTest : EGraphM Bool := do
   let a   ← add (leaf "a")
   let a'  ← add (leaf "a")
   let b   ← add (leaf "b")
@@ -26,12 +26,12 @@ def egTest : StateM EGraph Bool := do
 
 #eval check "egTest" (egTest.run' {})
 
-def congruenceTest : StateM EGraph Bool := do
-  let a ← add (leaf "a")
-  let b ← add (leaf "b")
+def congruenceTest : EGraphM Bool := do
+  let a  ← add (leaf "a")
+  let b  ← add (leaf "b")
   let fa ← add (ENode.mk "f" [a])
   let fb ← add (ENode.mk "f" [b])
-  let _ ← union a b
+  let _  ← union a b
   rebuild
   return (← get).uf.find fa == (← get).uf.find fb
 
@@ -53,11 +53,10 @@ def sevenSum : Pattern :=
     .app "+" [.app "+" [.app "e" [], .app "f" []],
               .app "g" []]]
 
-def bigTest : StateM EGraph Bool := do
+def bigTest : EGraphM Bool := do
   let _ ← instantiate sevenSum ∅
   saturate [commRule, assocRule]
-  let eg ← get
-  return (eg.allIds.length, eg.memo.size) == (127, 1939)
+  return ((← allIds).length, ← memo.size) == (127, 1939)
 
 #eval check "big test" (bigTest.run' {})
 
